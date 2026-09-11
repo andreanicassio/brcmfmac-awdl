@@ -1,0 +1,314 @@
+--- a/drivers/net/wireless/broadcom/brcm80211/brcmfmac/fweh.h	2026-09-11 23:36:26.296361654 +0100
++++ b/drivers/net/wireless/broadcom/brcm80211/brcmfmac/fweh.h	2026-09-11 23:35:42.637467058 +0100
+@@ -94,6 +94,19 @@
+ 	BRCMF_ENUM_DEF(FIFO_CREDIT_MAP, 74) \
+ 	BRCMF_ENUM_DEF(ACTION_FRAME_RX, 75) \
+ 	BRCMF_ENUM_DEF(TDLS_PEER_EVENT, 92) \
++	BRCMF_ENUM_DEF(AWDL_AW, 96) \
++	BRCMF_ENUM_DEF(AWDL_ROLE, 97) \
++	BRCMF_ENUM_DEF(AWDL_EVENT, 98) \
++	BRCMF_ENUM_DEF(AWDL_AW_EXT_END, 111) \
++	BRCMF_ENUM_DEF(AWDL_AW_EXT_START, 112) \
++	BRCMF_ENUM_DEF(AWDL_AW_START, 113) \
++	BRCMF_ENUM_DEF(AWDL_RADIO_OFF, 114) \
++	BRCMF_ENUM_DEF(AWDL_PEER_STATE, 115) \
++	BRCMF_ENUM_DEF(AWDL_SYNC_STATE_CHANGED, 116) \
++	BRCMF_ENUM_DEF(AWDL_CHIP_RESET, 117) \
++	BRCMF_ENUM_DEF(AWDL_INTERLEAVED_SCAN_START, 118) \
++	BRCMF_ENUM_DEF(AWDL_INTERLEAVED_SCAN_STOP, 119) \
++	BRCMF_ENUM_DEF(AWDL_PEER_CACHE_CONTROL, 120) \
+ 	BRCMF_ENUM_DEF(BCMC_CREDIT_SUPPORT, 127) \
+ 	BRCMF_ABSTRACT_ENUM_DEF(EXT_AUTH_REQ, 0) \
+ 	BRCMF_ABSTRACT_ENUM_DEF(EXT_AUTH_FRAME_RX, 1) \
+@@ -195,6 +208,7 @@
+ #define BRCMF_E_IF_ROLE_WDS			2
+ #define BRCMF_E_IF_ROLE_P2P_GO			3
+ #define BRCMF_E_IF_ROLE_P2P_CLIENT		4
++#define BRCMF_E_IF_ROLE_AWDL			7
+ 
+ /**
+  * definitions for event packet validation.
+--- a/drivers/net/wireless/broadcom/brcm80211/brcmfmac/fweh.c	2026-09-11 23:36:26.555612658 +0100
++++ b/drivers/net/wireless/broadcom/brcm80211/brcmfmac/fweh.c	2026-09-11 23:35:42.637781957 +0100
+@@ -165,7 +165,9 @@
+ 		brcmf_dbg(EVENT, "adding %s (%pM)\n", emsg->ifname,
+ 			  emsg->addr);
+ 		ifp = brcmf_add_if(drvr, ifevent->bsscfgidx, ifevent->ifidx,
+-				   is_p2pdev, emsg->ifname, emsg->addr);
++				   is_p2pdev,
++				   ifevent->role == BRCMF_E_IF_ROLE_AWDL ?
++				   "awdl%d" : emsg->ifname, emsg->addr);
+ 		if (IS_ERR(ifp))
+ 			return;
+ 		if (!is_p2pdev)
+--- a/drivers/net/wireless/broadcom/brcm80211/brcmfmac/vendor.h	2026-09-11 23:36:26.779527367 +0100
++++ b/drivers/net/wireless/broadcom/brcm80211/brcmfmac/vendor.h	2026-09-11 23:35:42.638631728 +0100
+@@ -25,6 +25,8 @@
+ 
+ 	BRCMF_NLATTR_LEN,
+ 	BRCMF_NLATTR_DATA,
++	BRCMF_NLATTR_FWEVENT_HDR,	/* struct brcmf_vndr_fwevent_hdr */
++	BRCMF_NLATTR_FWEVENT_DATA,	/* raw firmware event payload */
+ 
+ 	__BRCMF_NLATTR_AFTER_LAST,
+ 	BRCMF_NLATTR_MAX = __BRCMF_NLATTR_AFTER_LAST - 1
+@@ -50,4 +52,26 @@
+ 
+ extern const struct wiphy_vendor_command brcmf_vendor_cmds[];
+ 
++/* vendor events (nl80211 NL80211_CMD_VENDOR multicast) */
++enum brcmf_vndr_evts {
++	BRCMF_VNDR_EVT_FWEVENT,		/* raw firmware event (AWDL etc.) */
++	BRCMF_VNDR_EVT_LAST
++};
++
++/**
++ * struct brcmf_vndr_fwevent_hdr - header carried in BRCMF_NLATTR_FWEVENT_HDR
++ */
++struct brcmf_vndr_fwevent_hdr {
++	__le32 event_code;
++	__le32 status;
++	__le32 reason;
++	__le32 flags;
++	__le32 ifidx;
++	__le32 bsscfgidx;
++	u8 addr[6];
++	__le16 datalen;
++} __packed;
++
++extern const struct nl80211_vendor_cmd_info brcmf_vendor_events[];
++
+ #endif /* _vendor_h_ */
+--- a/drivers/net/wireless/broadcom/brcm80211/brcmfmac/vendor.c	2026-09-11 23:36:27.040131490 +0100
++++ b/drivers/net/wireless/broadcom/brcm80211/brcmfmac/vendor.c	2026-09-11 23:35:42.638793416 +0100
+@@ -104,6 +104,13 @@
+ 	return ret;
+ }
+ 
++const struct nl80211_vendor_cmd_info brcmf_vendor_events[] = {
++	[BRCMF_VNDR_EVT_FWEVENT] = {
++		.vendor_id = BROADCOM_OUI,
++		.subcmd = BRCMF_VNDR_EVT_FWEVENT
++	},
++};
++
+ const struct wiphy_vendor_command brcmf_vendor_cmds[] = {
+ 	{
+ 		{
+--- a/drivers/net/wireless/broadcom/brcm80211/brcmfmac/cfg80211.c	2026-09-11 23:36:27.423497781 +0100
++++ b/drivers/net/wireless/broadcom/brcm80211/brcmfmac/cfg80211.c	2026-09-11 23:35:42.640882009 +0100
+@@ -30,6 +30,7 @@
+ #include "fwil.h"
+ #include "proto.h"
+ #include "vendor.h"
++#include "awdl.h"
+ #include "bus.h"
+ #include "common.h"
+ #include "fwvid.h"
+@@ -6733,6 +6734,8 @@
+ 		/* waiting process may have timed out */
+ 		if (!cfg->vif_event.vif) {
+ 			spin_unlock(&event->vif_event_lock);
++			if (ifevent->role == BRCMF_E_IF_ROLE_AWDL)
++				return brcmf_awdl_attach_if(cfg, ifp);
+ 			return -EBADF;
+ 		}
+ 
+@@ -6811,6 +6814,7 @@
+ 	brcmf_fweh_register(cfg->pub, BRCMF_E_PSK_SUP,
+ 			    brcmf_notify_connect_status);
+ 	brcmf_fweh_register(cfg->pub, BRCMF_E_RSSI, brcmf_notify_rssi);
++	brcmf_awdl_register_event_handlers(cfg);
+ 
+ 	brcmf_fwvid_register_event_handlers(cfg->pub);
+ }
+@@ -7719,6 +7723,8 @@
+ 	/* vendor commands/events support */
+ 	wiphy->vendor_commands = brcmf_vendor_cmds;
+ 	wiphy->n_vendor_commands = BRCMF_VNDR_CMDS_LAST - 1;
++	wiphy->vendor_events = brcmf_vendor_events;
++	wiphy->n_vendor_events = BRCMF_VNDR_EVT_LAST;
+ 
+ 	if (brcmf_feat_is_enabled(ifp, BRCMF_FEAT_WOWL))
+ 		brcmf_wiphy_wowl_params(wiphy, ifp);
+--- a/drivers/net/wireless/broadcom/brcm80211/brcmfmac/p2p.c	2026-09-11 23:36:27.718493182 +0100
++++ b/drivers/net/wireless/broadcom/brcm80211/brcmfmac/p2p.c	2026-09-11 23:35:42.641841108 +0100
+@@ -16,6 +16,7 @@
+ #include "fwil.h"
+ #include "fwil_types.h"
+ #include "p2p.h"
++#include "awdl.h"
+ #include "cfg80211.h"
+ #include "feature.h"
+ 
+@@ -1404,6 +1405,9 @@
+ 	u16 mgmt_type;
+ 	u8 action;
+ 
++	if (brcmf_awdl_is_awdl_if(ifp))
++		return brcmf_awdl_notify_fwevent(ifp, e, data);
++
+ 	if (e->datalen < sizeof(*rxframe)) {
+ 		brcmf_dbg(SCAN, "Event data too small. Ignore\n");
+ 		return 0;
+@@ -1504,6 +1508,9 @@
+ 		  "ACTION_FRAME_OFF_CHAN_COMPLETE" : "ACTION_FRAME_COMPLETE",
+ 		  e->status);
+ 
++	if (brcmf_awdl_is_awdl_if(ifp))
++		return brcmf_awdl_notify_fwevent(ifp, e, data);
++
+ 	if (!test_bit(BRCMF_P2P_STATUS_SENDING_ACT_FRAME, &p2p->status))
+ 		return 0;
+ 
+--- a/drivers/net/wireless/broadcom/brcm80211/brcmfmac/Makefile	2026-09-11 23:36:27.930737215 +0100
++++ b/drivers/net/wireless/broadcom/brcm80211/brcmfmac/Makefile	2026-09-11 23:35:42.639139825 +0100
+@@ -24,6 +24,7 @@
+ 		feature.o \
+ 		btcoex.o \
+ 		vendor.o \
++		awdl.o \
+ 		pno.o \
+ 		xtlv.o
+ brcmfmac-$(CONFIG_BRCMFMAC_PROTO_BCDC) += \
+--- /dev/null	2026-09-11 23:06:34.297797882 +0100
++++ b/drivers/net/wireless/broadcom/brcm80211/brcmfmac/awdl.c	2026-09-11 23:35:42.639030723 +0100
+@@ -0,0 +1,117 @@
++// SPDX-License-Identifier: ISC
++/* AWDL (Apple Wireless Direct Link) support for brcmfmac.
++ *
++ * Apple's Broadcom firmware implements AWDL timing/sync/channel hopping in
++ * the dongle. The host creates an AWDL bsscfg with the "awdl_if" iovar, the
++ * firmware answers with a WLC_E_IF event (role 7). We attach a netdev
++ * (awdl%d, iftype OCB) to it and forward AWDL firmware events plus action
++ * frames received on that interface to userspace as nl80211 vendor events.
++ */
++#include <linux/netdevice.h>
++#include <net/cfg80211.h>
++#include <net/netlink.h>
++
++#include "core.h"
++#include "debug.h"
++#include "fweh.h"
++#include "cfg80211.h"
++#include "vendor.h"
++#include "awdl.h"
++
++bool brcmf_awdl_is_awdl_if(struct brcmf_if *ifp)
++{
++	return ifp && ifp->vif && ifp->vif->wdev.iftype == NL80211_IFTYPE_OCB;
++}
++
++int brcmf_awdl_notify_fwevent(struct brcmf_if *ifp,
++			      const struct brcmf_event_msg *e, void *data)
++{
++	struct brcmf_cfg80211_info *cfg = ifp->drvr->config;
++	struct wiphy *wiphy = cfg_to_wiphy(cfg);
++	struct wireless_dev *wdev = NULL;
++	struct brcmf_vndr_fwevent_hdr hdr;
++	struct sk_buff *skb;
++	u32 datalen = e->datalen;
++
++	if (datalen > BRCMF_DCMD_MAXLEN)
++		datalen = BRCMF_DCMD_MAXLEN;
++
++	if (ifp->vif && ifp->vif->wdev.netdev &&
++	    ifp->vif->wdev.netdev->reg_state == NETREG_REGISTERED)
++		wdev = &ifp->vif->wdev;
++
++	hdr.event_code = cpu_to_le32(e->event_code);
++	hdr.status = cpu_to_le32(e->status);
++	hdr.reason = cpu_to_le32(e->reason);
++	hdr.flags = cpu_to_le32(e->flags);
++	hdr.ifidx = cpu_to_le32(e->ifidx);
++	hdr.bsscfgidx = cpu_to_le32(e->bsscfgidx);
++	memcpy(hdr.addr, e->addr, ETH_ALEN);
++	hdr.datalen = cpu_to_le16(datalen);
++
++	skb = cfg80211_vendor_event_alloc(wiphy, wdev,
++					  sizeof(hdr) + datalen + 32,
++					  BRCMF_VNDR_EVT_FWEVENT, GFP_KERNEL);
++	if (!skb)
++		return -ENOMEM;
++
++	if (nla_put(skb, BRCMF_NLATTR_FWEVENT_HDR, sizeof(hdr), &hdr) ||
++	    (datalen && nla_put(skb, BRCMF_NLATTR_FWEVENT_DATA, datalen, data))) {
++		kfree_skb(skb);
++		return -ENOBUFS;
++	}
++	cfg80211_vendor_event(skb, GFP_KERNEL);
++	brcmf_dbg(EVENT, "awdl: forwarded fw event %u status %u ifidx %u len %u\n",
++		  e->event_code, e->status, e->ifidx, datalen);
++	return 0;
++}
++
++/* Called from the WLC_E_IF handler for an unsolicited IF_ADD with the AWDL
++ * role: give the new ifp a vif and a registered netdev.
++ */
++int brcmf_awdl_attach_if(struct brcmf_cfg80211_info *cfg, struct brcmf_if *ifp)
++{
++	struct brcmf_cfg80211_vif *vif;
++	int err;
++
++	vif = brcmf_alloc_vif(cfg, NL80211_IFTYPE_OCB);
++	if (IS_ERR(vif))
++		return PTR_ERR(vif);
++
++	ifp->vif = vif;
++	vif->ifp = ifp;
++	if (ifp->ndev) {
++		vif->wdev.netdev = ifp->ndev;
++		ifp->ndev->ieee80211_ptr = &vif->wdev;
++		SET_NETDEV_DEV(ifp->ndev, wiphy_dev(cfg->wiphy));
++	}
++
++	err = brcmf_net_attach(ifp, false);
++	if (err) {
++		bphy_err(cfg->pub, "awdl: net attach failed %d\n", err);
++		ifp->vif = NULL;
++		brcmf_free_vif(vif);
++		return err;
++	}
++	brcmf_dbg(INFO, "awdl: attached %s bsscfg %d ifidx %d\n",
++		  ifp->ndev->name, ifp->bsscfgidx, ifp->ifidx);
++	return 0;
++}
++
++void brcmf_awdl_register_event_handlers(struct brcmf_cfg80211_info *cfg)
++{
++	static const enum brcmf_fweh_event_code codes[] = {
++		BRCMF_E_AWDL_AW, BRCMF_E_AWDL_ROLE, BRCMF_E_AWDL_EVENT,
++		BRCMF_E_AWDL_AW_EXT_END, BRCMF_E_AWDL_AW_EXT_START,
++		BRCMF_E_AWDL_AW_START, BRCMF_E_AWDL_RADIO_OFF,
++		BRCMF_E_AWDL_PEER_STATE, BRCMF_E_AWDL_SYNC_STATE_CHANGED,
++		BRCMF_E_AWDL_CHIP_RESET, BRCMF_E_AWDL_INTERLEAVED_SCAN_START,
++		BRCMF_E_AWDL_INTERLEAVED_SCAN_STOP,
++		BRCMF_E_AWDL_PEER_CACHE_CONTROL,
++	};
++	int i;
++
++	for (i = 0; i < ARRAY_SIZE(codes); i++)
++		brcmf_fweh_register(cfg->pub, codes[i],
++				    brcmf_awdl_notify_fwevent);
++}
+--- /dev/null	2026-09-11 23:06:34.297797882 +0100
++++ b/drivers/net/wireless/broadcom/brcm80211/brcmfmac/awdl.h	2026-09-11 23:35:42.638924536 +0100
+@@ -0,0 +1,18 @@
++// SPDX-License-Identifier: ISC
++/* AWDL (Apple Wireless Direct Link) support: expose the firmware's built-in
++ * AWDL engine to userspace. Experimental.
++ */
++#ifndef _awdl_h_
++#define _awdl_h_
++
++struct brcmf_if;
++struct brcmf_event_msg;
++struct brcmf_cfg80211_info;
++
++int brcmf_awdl_notify_fwevent(struct brcmf_if *ifp,
++			      const struct brcmf_event_msg *e, void *data);
++int brcmf_awdl_attach_if(struct brcmf_cfg80211_info *cfg, struct brcmf_if *ifp);
++void brcmf_awdl_register_event_handlers(struct brcmf_cfg80211_info *cfg);
++bool brcmf_awdl_is_awdl_if(struct brcmf_if *ifp);
++
++#endif /* _awdl_h_ */

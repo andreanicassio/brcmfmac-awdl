@@ -1,0 +1,44 @@
+# AWDL iovars used by Apple's iOS 26 Broadcom driver (AppleBCMWLAN dext, decompiled)
+# plus a few generic controls. Probe with: sudo ./brcmiovar.py probefile iovars-awdl.txt
+ver
+cap
+bcmerrorstr
+awdl
+awdl_if
+awdl_cap
+awdl_config
+awdl_sync_params
+awdl_chan_seq
+awdl_election_tree
+awdl_opmode
+awdl_extcounts
+awdl_presencemode
+awdl_aftxmode
+awdl_af_hdr
+awdl_af_rssi
+awdl_oob_af
+awdl_oob_af_auto
+awdl_peer_op
+awdl_advertisers
+awdl_stats
+awdl_psf_dwell
+awdl_maxpeers
+awdl_osoc_chan
+awdl_min_rate
+awdl_phycal_period
+awdl_dfsp_cfg
+awdl_dfsp_ucsa
+awdl_payload
+awdl_afs_pload
+awdl_ranging_config
+awdl_ftm_ranging_config
+# older names from wlioctl.h, may or may not exist in this build
+awdl_extcount
+awdl_pscan
+awdl_aes_key
+awdl_uct_stats
+awdl_peer_stats
+awdl_ranging
+# generic, for orientation
+chanspec
+membytes

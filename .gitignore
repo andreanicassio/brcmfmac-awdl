@@ -1,0 +1,11 @@
+# never publish: decompiled Apple driver, Broadcom headers, paper text
+ref/
+# kernel sources (build-install.sh fetches them) and build output
+kernel/
+*.ko
+*.o
+*.mod*
+# captures / scratch
+events.log
+*.hex
+__pycache__/
