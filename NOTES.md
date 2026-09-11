@@ -163,3 +163,36 @@ needs raw frames.
 - ref/owl-paper-secret-sauce.txt Stute et al., MobiCom'18, AWDL protocol details.
 - OWL (github.com/seemoo-lab/owl): userspace AWDL state machine to reuse; OpenDrop on top.
 - brcmfmac vendor cmd: drivers/net/wireless/broadcom/brcm80211/brcmfmac/vendor.c
+
+## Data path / discovery status (2026-09-12, second session)
+Added AWDL data-frame encapsulation to the driver (awdl.c: brcmf_awdl_tx_encap /
+brcmf_awdl_rx_decap, LLC/SNAP 00:17:f2 + AWDL data hdr 0x0403 + ethertype, toggled by
+module params awdl_txencap/awdl_rxdecap). announce.py publishes our host TLVs (data path
+state + service params + ARPA hostname + version) via awdl_payload. added the iPad to the
+firmware peer table (awdl_peer_op add).
+
+**Diagnosis of why AirDrop discovery does not complete yet** (encap-test.sh, iPad in
+"Everyone", share sheet open):
+- Control plane fully works: firmware delivers the iPad's PSF/MIF action frames as events,
+  we decode hostname/version/services, firmware syncs (AWDL_ROLE -> slave).
+- Data plane is one-directional: our IPv6/mDNS goes OUT on awdl0 fine (avahi PTR queries for
+  _airdrop._tcp etc.), but **awdl0 rx_packets stays 0** across all 4 tx/rx encap combos.
+  The iPad's data-plane frames (its MAC 9e:bf..) essentially never arrive on awdl0; only its
+  multicast mDNS was seen once. The iPad **never sends a neighbor solicitation for our awdl0
+  address and never unicasts to us** -> it does not consider us a reachable peer, so it never
+  queries us and AirDrop never lists the laptop.
+- So the gap is not the encapsulation (RX has nothing to decap): the iPad isn't accepting us
+  as a data-path peer. Likely causes to chase next:
+  1. Election/sync: we announce but the iPad stays its own master; we must actually converge
+     (share master address + counter) before it will exchange data. Our election_tree/opmode
+     may need to advertise the iPad as master and matching metrics.
+  2. Our awdl_payload TLVs may not be reaching the air, or are malformed (need to sniff our
+     own PSF/MIF — requires a second AWDL-capable capture device or awdl_advertisers on a
+     second machine).
+  3. Firmware may not deliver peer *data* frames to the host without a per-peer flowring /
+     traffic registration we haven't set up (msgbuf flowring for the AWDL peer MAC; iOS uses
+     setAWDL_PEER_TRAFFIC_REGISTRATION + enableDatapath). No flowring is created for awdl0 TX
+     either (dmesg shows none).
+This is the real frontier: bidirectional discovery needs election convergence + verified
+outbound announcement + firmware data-path/flowring setup. Multi-day protocol work, no longer
+a yes/no unknown.
