@@ -121,6 +121,21 @@ needs raw frames.
   `awdlparse.py events.log` decodes the TLVs: hostname (<uuid>.local), version/device class,
   sync + election params, service responses (device name, _airdrop-like services).
 
+- **Host payload:** `awdl_payload` = u16 length + raw TLV blob (Apple calls it the sync frame
+  template); the firmware appends it to its PSF/MIF. Accepted 47 B of {data path state,
+  ARPA hostname, version} (announce.py). `awdl_afs_pload` is the on-demand secondary payload.
+- **Peer table:** old-format `awdl_peer_op` {u8 version=0, u8 opcode (0 add/1 del/2 info/3 upd),
+  ether_addr, u8 mode} is accepted (version=1 -> BADARG). The iOS driver sends a 0x1d0-byte
+  cache-control blob instead.
+- **What the iPad announces** (MIF): sync/election/chanseq (firmware-level), data path state
+  (47 B extended layout, flags 0x9f23, infra channel 40), version 0xa0 = 10.0 iOS, ARPA
+  <uuid>.local, service params, service responses only for `_applicationservicepairing` and
+  `_appsvcprepair` (device name "<owner> iPad Mini"). **No `_airdrop._tcp` record in the
+  frames**: AirDrop discovery is mDNS over the AWDL data path, so the data path is required.
+- awdl0 data path: Linux side TX works (avahi + IPv6 ND go out, no errors); RX from the iPad
+  not yet observed — first attempt ran after its 10-minute window expired. datapath-test.sh
+  repeats the experiment (announce, add peer, ping6 link-local, mDNS query, capture).
+
 ## Scripts
 - `sudo ./awdl-up.sh` / `sudo ./awdl-down.sh` — create/configure/enable, disable.
 - `sudo ./awdlevents.py -v` — decoded stream of the vendor events (AW windows, role,
