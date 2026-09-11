@@ -1,0 +1,49 @@
+AWDL enabled on awdl0 (bsscfg 2, master channel 44); state: 1
+awdl_payload set: 47 bytes (0c0f00248f58300002003e22fbf00eaa00001015000311616e647265612d7562756e74752d6d6163c00c1502001001)
+waiting up to 180s for an Apple device's AWDL frames...
+peer: 9e:bf:bf:f0:ab:6e (after 1s)
+== 9e:bf:bf:f0:ab:6e PSF x2  (chanspec/rssi samples: [('ffff', -2534901), ('ffff', -2534900)])
+   awdl_version       10.0 iOS
+== 9e:bf:bf:f0:ab:6e MIF x2  (chanspec/rssi samples: [('ffff', -2534900), ('ffff', -2338293)])
+   hostname           17b655fb-7873-41f2-8e72-2da5cf2d5c0a.local
+   awdl_version       10.0 iOS
+ok
+peer added to firmware table
+peer link-local: fe80::9cbf:bfff:fef0:ab6e
+5 packets transmitted, 0 received, +3 errors, 100% packet loss, time 4080ms
+
+sent 3 mDNS _airdrop queries
+== awdl0 counters:
+    RX:  bytes packets errors dropped  missed   mcast           
+          1450       2      0       0       0       2 
+    TX:  bytes packets errors dropped carrier collsns           
+         19435     128      0       4       0       0 
+== frames received from others on awdl0:
+00:03:08.583336 9e:bf:bf:f0:ab:6e > 33:33:00:00:00:fb, 802.3, length 725: LLC, dsap SNAP (0xaa) Individual, ssap SNAP (0xaa) Command, ctrl 0x03: oui Unknown (0x0017f2), pid Unknown (0x0800), length 717: 
+	0x0000:  aaaa 0300 17f2 0800 0304 1200 0000 86dd  ................
+	0x0010:  600f 0b00 029d 11ff fe80 0000 0000 0000  `...............
+	0x0020:  9cbf bfff fef0 ab6e ff02 0000 0000 0000  .......n........
+	0x0030:  0000 0000 0000 00fb 14e9 14e9 029d 6de7  ..............m.
+	0x0040:  0000 8400 0000 000a 0000 0004 2431 3762  ............$17b
+	0x0050:  3635 3566 622d 3738 3733 2d34 3166 322d  655fb-7873-41f2-
+	0x0060:  3865 3732 2d32 6461 3563 6632 6435 6330  8e72-2da5cf2d5c0
+	0x0070:  6105 6c6f 6361 6c00 001c 8001 0000 1194  a.local.........
+	0x0080:  0010 fe80 0000 0000 0000 9cbf bfff fef0  ................
+	0x0090:  ab6e 0145 0136 0142 0141 0130 0146 0145  .n.E.6.B.A.0.F.E
+	0x00a0:  0146 0146 0146 0146 0142 0146 0142 0143  .F.F.F.F.B.F.B.C
+	0x00b0:  0139 0130 0130 0130 0130 0130 0130 0130  .9.0.0.0.0.0.0.0
+	0x00c0:  0130 0130 0130 0130 0130 0130 0138 0145  .0.0.0.0.0.0.8.E
+	0x00d0:  0146 0369 7036 0461 7270 6100 000c 8001  .F.ip6.arpa.....
+== firmware advertisers:
+0000  62 73 44 00 66 67 3a 61 6b 2c e0 df 10 00 00 00  bsD.fg:ak,......
+0010  6e 00 10 00 10 00 10 00 15 02 00 00 15 02 00 00  n...............
+0020  9e bf bf f0 ab 6e 9e bf bf f0 ab 6e 00 00 00 00  .....n.....n....
+0030  00 00 00 00 00 00 00 00 ff ff ff ff 00 00 00 00  ................
+== firmware peer table:
+0000  3e 00 4a 01 02 35 aa f5 5b 00 00 00 00 00 9e bf  >.J..5..[.......
+0010  bf f0 ab 6e 38 00 00 00 26 00 0f 03 00 03 ff ff  ...n8...&.......
+0020  28 80 00 00 2c 80 00 00 00 00 00 00 00 00 00 00  (...,...........
+0030  06 51 00 00 2c 80 00 00 00 00 00 00 00 00 00 00  .Q..,...........
+ok
+error: Invalid exchange (kernel 52); firmware bcmerror=-30 NOTFOUND
+awdl0 still present (interface_remove unsupported?)

@@ -12,7 +12,8 @@ def build(name, awdl_mac, master_chan=44, version=0x10, devclass=1):
     dps = struct.pack("<H", 0x8f24) + b"X0\0" + struct.pack("<H", social) + awdl_mac + struct.pack("<H", 0)
     arpa = bytes([3, len(name)]) + name.encode() + b"\xc0\x0c"
     ver = bytes([version, devclass])
-    return tlv(12, dps) + tlv(16, arpa) + tlv(21, ver)
+    svc = b"\0\0\0" + struct.pack("<HI", 0, 0)          # service params (OWL: all zero)
+    return tlv(12, dps) + tlv(6, svc) + tlv(16, arpa) + tlv(21, ver)
 
 if __name__ == "__main__":
     iface, cfg = "wlp229s0", 2

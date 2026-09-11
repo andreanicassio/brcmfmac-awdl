@@ -4,7 +4,7 @@
 # Usage: datapath-test.sh [wait-seconds]
 cd "$(dirname "$0")"
 WAIT=${1:-120}
-PCAP=${PCAP:-/tmp/awdl-datapath.pcap}
+PCAP=${PCAP:-/tmp/awdl-datapath-$$.pcap}; rm -f "$PCAP"
 pkill -f '^python3 /home/andrea/awdl-brcmfmac/awdlevents.py' 2>/dev/null
 nohup python3 ./awdlevents.py -v > events.log 2>&1 &
 ./awdl-up.sh || exit 1
@@ -27,7 +27,7 @@ LL=$(python3 -c "
 m=bytes.fromhex('$HEX'); b=bytearray(m[:3]+b'\xff\xfe'+m[3:]); b[0]^=2
 print('fe80::'+':'.join('%x'%((b[i]<<8)|b[i+1]) for i in range(0,8,2)))")
 echo "peer link-local: $LL"
-timeout 25 tcpdump -i awdl0 -n -e -w "$PCAP" 2>/dev/null &
+timeout ${CAP:-25} tcpdump -i awdl0 -n -e -w "$PCAP" 2>/dev/null &
 sleep 1
 ping -6 -I awdl0 -c 5 -W 2 "$LL" 2>&1 | tail -2
 # a couple of mDNS queries for AirDrop, like a sender would
@@ -42,7 +42,7 @@ for i in range(3):
     s.sendto(q('_airdrop._tcp.local'),('ff02::fb%awdl0',5353)); time.sleep(2)
 print('sent 3 mDNS _airdrop queries')
 PY
-sleep 12
+sleep $(( ${CAP:-25} - 12 ))
 echo "== awdl0 counters:"; ip -s link show awdl0 | sed -n 3,6p
 echo "== frames received from others on awdl0:"; tcpdump -r "$PCAP" -n -e 2>/dev/null | grep -v "$(cat /sys/class/net/awdl0/address) >" | head -15
 echo "== firmware advertisers:"; ./brcmiovar.py -b 2 get awdl_advertisers 120 | head -4

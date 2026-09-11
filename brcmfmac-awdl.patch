@@ -96,7 +96,7 @@
  	{
  		{
 --- a/drivers/net/wireless/broadcom/brcm80211/brcmfmac/cfg80211.c	2026-09-11 23:36:27.423497781 +0100
-+++ b/drivers/net/wireless/broadcom/brcm80211/brcmfmac/cfg80211.c	2026-09-11 23:35:42.640882009 +0100
++++ b/drivers/net/wireless/broadcom/brcm80211/brcmfmac/cfg80211.c	2026-09-11 23:39:23.707735602 +0100
 @@ -30,6 +30,7 @@
  #include "fwil.h"
  #include "proto.h"
@@ -122,7 +122,28 @@
  
  	brcmf_fwvid_register_event_handlers(cfg->pub);
  }
-@@ -7719,6 +7723,8 @@
+@@ -7422,6 +7426,12 @@
+ 		.rx = BIT(IEEE80211_STYPE_ACTION >> 4) |
+ 		      BIT(IEEE80211_STYPE_PROBE_REQ >> 4)
+ 	},
++	[NL80211_IFTYPE_OCB] = {
++		/* AWDL interface */
++		.tx = 0xffff,
++		.rx = BIT(IEEE80211_STYPE_ACTION >> 4) |
++		      BIT(IEEE80211_STYPE_PROBE_REQ >> 4)
++	},
+ 	[NL80211_IFTYPE_AP] = {
+ 		.tx = 0xffff,
+ 		.rx = BIT(IEEE80211_STYPE_ASSOC_REQ >> 4) |
+@@ -7494,6 +7504,7 @@
+ 		goto err;
+ 
+ 	wiphy->interface_modes = BIT(NL80211_IFTYPE_STATION) |
++				 BIT(NL80211_IFTYPE_OCB) | /* AWDL */
+ 				 BIT(NL80211_IFTYPE_ADHOC) |
+ 				 BIT(NL80211_IFTYPE_AP);
+ 	if (mon_flag)
+@@ -7719,6 +7730,8 @@
  	/* vendor commands/events support */
  	wiphy->vendor_commands = brcmf_vendor_cmds;
  	wiphy->n_vendor_commands = BRCMF_VNDR_CMDS_LAST - 1;
@@ -161,6 +182,39 @@
  	if (!test_bit(BRCMF_P2P_STATUS_SENDING_ACT_FRAME, &p2p->status))
  		return 0;
  
+--- a/drivers/net/wireless/broadcom/brcm80211/brcmfmac/core.c	2026-09-12 00:11:57.642335702 +0100
++++ b/drivers/net/wireless/broadcom/brcm80211/brcmfmac/core.c	2026-09-12 00:05:46.409639416 +0100
+@@ -29,6 +29,7 @@
+ #include "proto.h"
+ #include "pcie.h"
+ #include "common.h"
++#include "awdl.h"
+ 
+ #define MAX_WAIT_FOR_8021X_TX			msecs_to_jiffies(950)
+ 
+@@ -365,6 +366,12 @@
+ 	/* set pacing shift for packet aggregation */
+ 	sk_pacing_shift_update(skb->sk, 8);
+ 
++	if (brcmf_awdl_is_awdl_if(ifp)) {
++		ret = brcmf_awdl_tx_encap(ifp, skb);
++		if (ret)
++			goto done;
++	}
++
+ 	ret = brcmf_proto_tx_queue_data(drvr, ifp->ifidx, skb);
+ 	if (ret < 0)
+ 		brcmf_txfinalize(ifp, skb, false);
+@@ -416,6 +423,9 @@
+ 		return;
+ 	}
+ 
++	if (brcmf_awdl_is_awdl_if(ifp))
++		brcmf_awdl_rx_decap(ifp, skb);
++
+ 	if (skb->pkt_type == PACKET_MULTICAST)
+ 		ifp->ndev->stats.multicast++;
+ 
 --- a/drivers/net/wireless/broadcom/brcm80211/brcmfmac/Makefile	2026-09-11 23:36:27.930737215 +0100
 +++ b/drivers/net/wireless/broadcom/brcm80211/brcmfmac/Makefile	2026-09-11 23:35:42.639139825 +0100
 @@ -24,6 +24,7 @@
@@ -172,8 +226,8 @@
  		xtlv.o
  brcmfmac-$(CONFIG_BRCMFMAC_PROTO_BCDC) += \
 --- /dev/null	2026-09-11 23:06:34.297797882 +0100
-+++ b/drivers/net/wireless/broadcom/brcm80211/brcmfmac/awdl.c	2026-09-11 23:35:42.639030723 +0100
-@@ -0,0 +1,117 @@
++++ b/drivers/net/wireless/broadcom/brcm80211/brcmfmac/awdl.c	2026-09-12 00:09:37.743164653 +0100
+@@ -0,0 +1,180 @@
 +// SPDX-License-Identifier: ISC
 +/* AWDL (Apple Wireless Direct Link) support for brcmfmac.
 + *
@@ -184,6 +238,8 @@
 + * frames received on that interface to userspace as nl80211 vendor events.
 + */
 +#include <linux/netdevice.h>
++#include <linux/etherdevice.h>
++#include <linux/if_ether.h>
 +#include <net/cfg80211.h>
 +#include <net/netlink.h>
 +
@@ -269,6 +325,7 @@
 +		brcmf_free_vif(vif);
 +		return err;
 +	}
++	ifp->ndev->needed_headroom += BRCMF_AWDL_ENCAP_LEN;
 +	brcmf_dbg(INFO, "awdl: attached %s bsscfg %d ifidx %d\n",
 +		  ifp->ndev->name, ifp->bsscfgidx, ifp->ifidx);
 +	return 0;
@@ -291,9 +348,69 @@
 +		brcmf_fweh_register(cfg->pub, codes[i],
 +				    brcmf_awdl_notify_fwevent);
 +}
++
++/* AWDL data frames on the air are 802.3 + LLC/SNAP (Apple OUI 00:17:f2, PID
++ * 0x0800) + a 6-byte AWDL data header {0x03,0x04, seq le16, 0x00,0x00} + the
++ * real ethertype. Apple's awdl0 hides this; do the same so the Linux IP stack
++ * sees plain Ethernet II frames.
++ */
++static const u8 brcmf_awdl_snap[8] = { 0xaa, 0xaa, 0x03, 0x00, 0x17, 0xf2, 0x08, 0x00 };
++static u16 brcmf_awdl_tx_seq;
++static int brcmf_awdl_txencap = 1;
++module_param_named(awdl_txencap, brcmf_awdl_txencap, int, 0644);
++MODULE_PARM_DESC(awdl_txencap, "Add LLC/SNAP+AWDL header on awdl0 TX (1) or send Ethernet II (0)");
++static int brcmf_awdl_rxdecap = 1;
++module_param_named(awdl_rxdecap, brcmf_awdl_rxdecap, int, 0644);
++MODULE_PARM_DESC(awdl_rxdecap, "Strip LLC/SNAP+AWDL header on awdl0 RX");
++
++int brcmf_awdl_tx_encap(struct brcmf_if *ifp, struct sk_buff *skb)
++{
++	u8 *p;
++	__be16 proto;
++	u16 seq;
++
++	if (!brcmf_awdl_txencap)
++		return 0;
++	if (skb->len < ETH_HLEN)
++		return -EINVAL;
++	if (skb_headroom(skb) < BRCMF_AWDL_ENCAP_LEN || skb_header_cloned(skb)) {
++		if (pskb_expand_head(skb, BRCMF_AWDL_ENCAP_LEN, 0, GFP_ATOMIC))
++			return -ENOMEM;
++	}
++	proto = ((struct ethhdr *)skb->data)->h_proto;
++	p = skb_push(skb, BRCMF_AWDL_ENCAP_LEN);
++	memmove(p, p + BRCMF_AWDL_ENCAP_LEN, 2 * ETH_ALEN);
++	*(__be16 *)(p + 12) = htons(skb->len - ETH_HLEN);	/* 802.3 length */
++	memcpy(p + 14, brcmf_awdl_snap, sizeof(brcmf_awdl_snap));
++	seq = brcmf_awdl_tx_seq++;
++	p[22] = 0x03; p[23] = 0x04;
++	p[24] = seq & 0xff; p[25] = seq >> 8;
++	p[26] = 0; p[27] = 0;
++	*(__be16 *)(p + 28) = proto;
++	skb_reset_mac_header(skb);
++	return 0;
++}
++
++/* called with skb->data just past the 14-byte MAC header (after eth_type_trans) */
++void brcmf_awdl_rx_decap(struct brcmf_if *ifp, struct sk_buff *skb)
++{
++	u8 *d = skb->data;
++	__be16 proto;
++
++	if (!brcmf_awdl_rxdecap || skb->len < BRCMF_AWDL_ENCAP_LEN)
++		return;
++	if (memcmp(d, brcmf_awdl_snap, sizeof(brcmf_awdl_snap)) != 0 ||
++	    d[8] != 0x03 || d[9] != 0x04)
++		return;
++	proto = *(__be16 *)(d + 14);
++	skb_pull(skb, BRCMF_AWDL_ENCAP_LEN);
++	skb->protocol = proto;
++	if (skb_mac_header_was_set(skb))
++		*(__be16 *)(skb_mac_header(skb) + 12) = proto;
++}
 --- /dev/null	2026-09-11 23:06:34.297797882 +0100
-+++ b/drivers/net/wireless/broadcom/brcm80211/brcmfmac/awdl.h	2026-09-11 23:35:42.638924536 +0100
-@@ -0,0 +1,18 @@
++++ b/drivers/net/wireless/broadcom/brcm80211/brcmfmac/awdl.h	2026-09-12 00:05:46.410259168 +0100
+@@ -0,0 +1,23 @@
 +// SPDX-License-Identifier: ISC
 +/* AWDL (Apple Wireless Direct Link) support: expose the firmware's built-in
 + * AWDL engine to userspace. Experimental.
@@ -302,6 +419,7 @@
 +#define _awdl_h_
 +
 +struct brcmf_if;
++struct sk_buff;
 +struct brcmf_event_msg;
 +struct brcmf_cfg80211_info;
 +
@@ -310,5 +428,9 @@
 +int brcmf_awdl_attach_if(struct brcmf_cfg80211_info *cfg, struct brcmf_if *ifp);
 +void brcmf_awdl_register_event_handlers(struct brcmf_cfg80211_info *cfg);
 +bool brcmf_awdl_is_awdl_if(struct brcmf_if *ifp);
++int brcmf_awdl_tx_encap(struct brcmf_if *ifp, struct sk_buff *skb);
++void brcmf_awdl_rx_decap(struct brcmf_if *ifp, struct sk_buff *skb);
++
++#define BRCMF_AWDL_ENCAP_LEN	16	/* LLC/SNAP(8) + AWDL data hdr(6) + ethertype(2) */
 +
 +#endif /* _awdl_h_ */
