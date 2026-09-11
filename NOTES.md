@@ -177,7 +177,7 @@ firmware peer table (awdl_peer_op add).
   we decode hostname/version/services, firmware syncs (AWDL_ROLE -> slave).
 - Data plane is one-directional: our IPv6/mDNS goes OUT on awdl0 fine (avahi PTR queries for
   _airdrop._tcp etc.), but **awdl0 rx_packets stays 0** across all 4 tx/rx encap combos.
-  The iPad's data-plane frames (its MAC 9e:bf..) essentially never arrive on awdl0; only its
+  The iPad's data-plane frames (its MAC) essentially never arrive on awdl0; only its
   multicast mDNS was seen once. The iPad **never sends a neighbor solicitation for our awdl0
   address and never unicasts to us** -> it does not consider us a reachable peer, so it never
   queries us and AirDrop never lists the laptop.
