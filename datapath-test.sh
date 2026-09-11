@@ -5,20 +5,20 @@
 cd "$(dirname "$0")"
 WAIT=${1:-120}
 PCAP=${PCAP:-/tmp/awdl-datapath-$$.pcap}; rm -f "$PCAP"
-pkill -f '^python3 /home/andrea/awdl-brcmfmac/awdlevents.py' 2>/dev/null
+pkill -f '^python3 /home/andrea/awdl-brcmfmac/awdlevents.py' 2>/dev/null; sleep 0.5
 nohup python3 ./awdlevents.py -v > events.log 2>&1 &
 ./awdl-up.sh || exit 1
 ./announce.py "$(hostname)" | tail -1
 echo "waiting up to ${WAIT}s for an Apple device's AWDL frames..."
 PEER=""
 for i in $(seq 1 "$WAIT"); do
-    PEER=$(grep -m1 -o -E 'ACTION_FRAME_RX .* ([0-9a-f]{2}:){5}[0-9a-f]{2}' events.log | grep -o -E '([0-9a-f]{2}:){5}[0-9a-f]{2}$')
+    PEER=$(grep -a -m1 -o -E 'ACTION_FRAME_RX .* ([0-9a-f]{2}:){5}[0-9a-f]{2}' events.log | grep -o -E '([0-9a-f]{2}:){5}[0-9a-f]{2}$')
     [ -n "$PEER" ] && break
     sleep 1
 done
 if [ -z "$PEER" ]; then echo "no peer heard in ${WAIT}s"; ./awdl-down.sh; exit 2; fi
 echo "peer: $PEER (after ${i}s)"
-python3 awdlparse.py events.log | grep -E '^==|hostname|awdl_version' | head -6
+python3 awdlparse.py events.log 2>/dev/null | grep -E '^==|hostname|awdl_version' | head -6
 HEX=$(echo "$PEER" | tr -d :)
 # old-format awdl_peer_op_t {version=0, opcode=0 (ADD), addr, mode=0}
 ./brcmiovar.py -b 2 set awdl_peer_op "0000${HEX}00" && echo "peer added to firmware table"
