@@ -1,12 +1,17 @@
-# never publish: decompiled Apple driver, Broadcom headers, paper text
-ref/
-# kernel sources (build-install.sh fetches them) and build output
-kernel/
-*.ko
-*.o
-*.mod*
 # captures / scratch
-events.log
+# kernel sources (build-install.sh fetches them) and build output
+# never publish: decompiled Apple driver, Broadcom headers, paper text
 *.hex
+*.ko
+*.log
+*.mod*
+*.o
+*.pcap
+/tmp/
 __pycache__/
+events.log
+kernel/
+mac*.py
+macssh.py
 opendrop-venv/
+ref/

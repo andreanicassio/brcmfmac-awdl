@@ -227,3 +227,36 @@ the iPad's peer cache expires us between announcements and it drops our data as
 us as a data-path peer. Unblocker: a second AWDL-capable sniffer (a Mac: `tcpdump -i awdl0`
 + Wireshark AWDL dissector, or a second Linux box with this driver) to see what we actually
 put on the air and whether the iPad ACKs our unicast.
+
+## Both-ends test with a Mac (macOS 26.5) over Tailscale SSH — decisive (2026-09-12 ~02:10)
+Driving both ends: laptop + a Mac reached by SSH over Tailscale, tcpdump on the Mac's awdl0.
+- Control plane bidirectional: with the Mac put in ACTIVE-SENDER mode (AirDrop send sheet
+  open, so its awdl0 wakes and it browses) the laptop received the Mac's `_airdrop._tcp`
+  browse queries (8) and airdrop-responder answered them unicast+multicast.
+- BUT the Mac's own awdl0 capture recorded ~5 frames in 140 s and ZERO from the laptop
+  (<laptop-mac> never appeared). Our answers/data never reached the Mac.
+- With only the AirDrop RECEIVER window open, the Mac's awdl0 captured 2 frames / 130 s —
+  it is dormant. macOS keeps the AWDL data path asleep until an active session, which AirDrop
+  wakes over Bluetooth LE (contact-hash adverts). We do not send that BLE trigger.
+- Firmware `datarx` = 0 in every run; `txsupr` tracks `datatx` under load (e.g. datatx 6404 /
+  txsupr 6413). Isolation runs (supr-test.sh, flags-test.sh): registering the peer (minimal
+  peer_op, full entry with the peer's channel sequence, pinned IPv6 neighbour to bypass ND)
+  does NOT stop suppression; sweeping the peer-entry flags byte changed tx/suppress volume
+  but never produced a single ping reply from the Mac.
+
+**Conclusion (cross-verified from the peer side):** the AWDL *data* plane is non-functional
+in both directions on this stack. Broadcast management/discovery frames flow on the shared
+social-channel availability windows (that is real and reliable), but addressed data does not:
+it needs tight per-peer availability-window scheduling plus the peer confirming us as an
+active data peer, and neither is achieved by configuring the FullMAC firmware blind through
+iovars. On the receive side, a passive Apple device never wakes its data path for us because
+we cannot send the AirDrop BLE trigger. This is the same wall OWL/OpenDrop hit; they had
+monitor mode + injection to work around the firmware, which brcmfmac does not offer here.
+
+**Realistic remaining paths (all large):** (1) reverse-engineer the firmware's AWDL data
+TX/RX scheduling and per-peer AW tables well enough to place data in the right window — deep,
+needs the leaked wl AWDL sources or firmware RE; (2) add a Linux BLE AirDrop advertiser so a
+passive Apple receiver wakes its AWDL data path for us — separate protocol, still blocked by
+(1) for the actual transfer; (3) accept the honest result: this hardware does AWDL discovery
+under Linux but not AWDL data transfer. What DOES work and is worth keeping: firmware AWDL
+control plane, awdl0 netdev, event/action-frame decode, service discovery both ways.
