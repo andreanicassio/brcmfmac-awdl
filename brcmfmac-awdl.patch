@@ -226,8 +226,8 @@
  		xtlv.o
  brcmfmac-$(CONFIG_BRCMFMAC_PROTO_BCDC) += \
 --- /dev/null	2026-09-11 23:06:34.297797882 +0100
-+++ b/drivers/net/wireless/broadcom/brcm80211/brcmfmac/awdl.c	2026-09-12 00:09:37.743164653 +0100
-@@ -0,0 +1,180 @@
++++ b/drivers/net/wireless/broadcom/brcm80211/brcmfmac/awdl.c	2026-09-12 01:15:41.890607053 +0100
+@@ -0,0 +1,211 @@
 +// SPDX-License-Identifier: ISC
 +/* AWDL (Apple Wireless Direct Link) support for brcmfmac.
 + *
@@ -363,6 +363,19 @@
 +module_param_named(awdl_rxdecap, brcmf_awdl_rxdecap, int, 0644);
 +MODULE_PARM_DESC(awdl_rxdecap, "Strip LLC/SNAP+AWDL header on awdl0 RX");
 +
++/* We cannot sniff our own radio, so the only way to learn the on-air format of the
++ * data frames a peer sends us is to count what arrives: frames that carry the Apple
++ * LLC/SNAP + AWDL data header vs frames that are already plain Ethernet II. Exposed
++ * read-only so a test run can read them without a debug build:
++ *   /sys/module/brcmfmac/parameters/awdl_rx_encapped | awdl_rx_plain
++ */
++static int brcmf_awdl_rx_encapped;
++module_param_named(awdl_rx_encapped, brcmf_awdl_rx_encapped, int, 0644);
++MODULE_PARM_DESC(awdl_rx_encapped, "awdl0 RX frames that carried the LLC/SNAP+AWDL header");
++static int brcmf_awdl_rx_plain;
++module_param_named(awdl_rx_plain, brcmf_awdl_rx_plain, int, 0644);
++MODULE_PARM_DESC(awdl_rx_plain, "awdl0 RX frames that were already plain Ethernet II");
++
 +int brcmf_awdl_tx_encap(struct brcmf_if *ifp, struct sk_buff *skb)
 +{
 +	u8 *p;
@@ -397,16 +410,34 @@
 +	u8 *d = skb->data;
 +	__be16 proto;
 +
-+	if (!brcmf_awdl_rxdecap || skb->len < BRCMF_AWDL_ENCAP_LEN)
++	if (skb->len < BRCMF_AWDL_ENCAP_LEN ||
++	    memcmp(d, brcmf_awdl_snap, sizeof(brcmf_awdl_snap)) != 0 ||
++	    d[8] != 0x03 || d[9] != 0x04) {
++		brcmf_awdl_rx_plain++;
++		brcmf_dbg(DATA, "awdl: rx plain %*ph\n",
++			  min_t(int, skb->len, 16), skb->data);
 +		return;
-+	if (memcmp(d, brcmf_awdl_snap, sizeof(brcmf_awdl_snap)) != 0 ||
-+	    d[8] != 0x03 || d[9] != 0x04)
++	}
++	brcmf_awdl_rx_encapped++;
++	if (!brcmf_awdl_rxdecap)
 +		return;
 +	proto = *(__be16 *)(d + 14);
-+	skb_pull(skb, BRCMF_AWDL_ENCAP_LEN);
-+	skb->protocol = proto;
-+	if (skb_mac_header_was_set(skb))
++	/* Move the Ethernet addresses up over the encapsulation instead of only
++	 * pulling: AF_PACKET taps (tcpdump) rebuild the frame from skb_mac_header()
++	 * to the tail, so a plain skb_pull() would leave the 16 stale header bytes
++	 * sitting between the MAC header and the IP header in every capture.
++	 */
++	if (skb_mac_header_was_set(skb)) {
++		u8 *mac = skb_mac_header(skb);
++
++		memmove(mac + BRCMF_AWDL_ENCAP_LEN, mac, 2 * ETH_ALEN);
++		skb_pull(skb, BRCMF_AWDL_ENCAP_LEN);
++		skb_set_mac_header(skb, -ETH_HLEN);
 +		*(__be16 *)(skb_mac_header(skb) + 12) = proto;
++	} else {
++		skb_pull(skb, BRCMF_AWDL_ENCAP_LEN);
++	}
++	skb->protocol = proto;
 +}
 --- /dev/null	2026-09-11 23:06:34.297797882 +0100
 +++ b/drivers/net/wireless/broadcom/brcm80211/brcmfmac/awdl.h	2026-09-12 00:05:46.410259168 +0100

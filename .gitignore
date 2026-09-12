@@ -9,3 +9,4 @@ kernel/
 events.log
 *.hex
 __pycache__/
+opendrop-venv/

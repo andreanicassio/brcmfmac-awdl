@@ -196,3 +196,34 @@ firmware peer table (awdl_peer_op add).
 This is the real frontier: bidirectional discovery needs election convergence + verified
 outbound announcement + firmware data-path/flowring setup. Multi-day protocol work, no longer
 a yes/no unknown.
+
+## Decisive data-plane result (2026-09-12, ~01:40, after Opus subagent + direct work)
+Setup that reached the furthest: aligned channel sequence (infra ch in slot 0, 44 in slots
+2/9, 6 in slot 7), full awdl_sync_params mirroring the iPad (af_period 110 TU, ext 3/3/3/3,
+presence 4), peer added with its channel sequence (peerop.py, 68-byte cache-control blob),
+host TLVs via awdl_payload (announce.py: data path state, service params, ARPA, version 0x34),
+OpenDrop receiver + `airdrop-responder.py` (replays OpenDrop's full 166-byte announcement —
+PTR+SRV+TXT+NSEC+AAAA — every 1.5 s from UDP 5353 and answers any _airdrop query unicast to
+the querier from 5353; Apple ignores responses from other ports, which the first beacon used).
+
+Measured, across ~8 instrumented runs (probe-run.sh, unicast-test.sh):
+- Management plane: solid both ways. afrx ~9/s from the iPad; election converged (our
+  awdl_opmode master = iPad); we transmit MIF/PSF (aftx ≈ 0.6/s, far below Apple's ~9/s
+  even with af_period=110 — the knob is not honoured or another one gates it).
+- The iPad DID discover our service once (r4): it multicast-queried SRV+TXT of our instance
+  20×. At that time our port-5353 answers lacked AAAA and the full answers came from an
+  ephemeral port. Fixed by airdrop-responder.py. After the fix the iPad still never sent a
+  neighbor solicitation for our address nor any TCP to 8771.
+- Data plane RX: firmware `datarx` stayed 0 in every run; only 2–10 multicast frames from
+  the iPad ever reached awdl0 per run (its browse burst), nothing sustained.
+- Data plane TX: firmware `datatx` increments, txdrop/txsupr do not grow, no kernel errors —
+  yet a TRUE UNICAST ping6 (neighbor pinned, ND bypassed) gets 0/5 replies. So our data frames
+  are handed to the radio but the iPad does not receive/acknowledge them.
+Conclusion: control plane OK, data plane effectively non-functional both ways except by luck.
+Most likely causes (cannot be distinguished with one machine): (1) our MIF rate too low so
+the iPad's peer cache expires us between announcements and it drops our data as
+"unknown peer"; (2) firmware transmits data outside the iPad's availability windows
+(AW/TSF alignment despite slave sync); (3) something in our MIF TLVs makes the iPad reject
+us as a data-path peer. Unblocker: a second AWDL-capable sniffer (a Mac: `tcpdump -i awdl0`
++ Wireshark AWDL dissector, or a second Linux box with this driver) to see what we actually
+put on the air and whether the iPad ACKs our unicast.

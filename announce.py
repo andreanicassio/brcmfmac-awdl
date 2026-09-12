@@ -6,9 +6,9 @@ from brcmiovar import GenlSock
 
 def tlv(t, v): return bytes([t]) + struct.pack("<H", len(v)) + v
 
-def build(name, awdl_mac, master_chan=44, version=0x10, devclass=1):
+def build(name, awdl_mac, master_chan=44, version=0x34, devclass=1):
     # data path state (OWL layout): flags, country, social channels, awdl addr, ext flags
-    social = 0x0002 if master_chan == 44 else 0x0001   # bit1 = ch44, bit0 = ch6 (OWL enum)
+    social = 0x0003          # bit0 = ch6, bit1 = ch44; Apple devices advertise both
     dps = struct.pack("<H", 0x8f24) + b"X0\0" + struct.pack("<H", social) + awdl_mac + struct.pack("<H", 0)
     arpa = bytes([3, len(name)]) + name.encode() + b"\xc0\x0c"
     ver = bytes([version, devclass])
